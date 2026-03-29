@@ -85,10 +85,10 @@ print("HSV shape:", pixels_hsv.shape)
 # =========================
 r = pixels[:, 0]
 g = pixels[:, 1]
-b = pixels[:, 2]
+b_rgb = pixels[:, 2]
 
 plt.figure(figsize=(6, 6))
-plt.scatter(r, g, c=pixels / 255.0, s=5)
+plt.scatter(r, g, c=pixels / 255.0, s=3, alpha=0.6)
 plt.xlabel("Red")
 plt.ylabel("Green")
 plt.title("Color Distribution (RGB space)")
@@ -99,11 +99,11 @@ plt.show()
 # LAB COLOR DISTRIBUTION
 # =========================
 
-a = pixels_lab[:, 1]
-b = pixels_lab[:, 2]
+a_lab = pixels_lab[:, 1]
+b_lab = pixels_lab[:, 2]
 
 plt.figure(figsize=(6, 6))
-plt.scatter(a, b, c=img_small_norm.reshape(-1, 3), s=5)
+plt.scatter(a_lab, b_lab, c=img_small_norm.reshape(-1, 3), s=3, alpha=0.6)
 plt.xlabel("A (Green-Red)")
 plt.ylabel("B (Blue-Yellow)")
 plt.title("LAB Color Distribution (A-B space)")
