@@ -10,7 +10,7 @@ from sklearn.cluster import KMeans
 IMAGE_PATH = "data/test.png"
 RESIZE_DIM = (64, 64)
 BLUR_RADIUS = 10
-K = 6  # number of clusters
+K = 6
 
 # =========================
 # LOAD IMAGE
@@ -18,13 +18,13 @@ K = 6  # number of clusters
 img = Image.open(IMAGE_PATH).convert("RGB")
 
 # =========================
-# RESIZE (PRIMARY METHOD)
+# RESIZE
 # =========================
 img_small = img.resize(RESIZE_DIM)
 img_small_np = np.array(img_small)
 
 # =========================
-# OPTIONAL BLUR (COMPARISON)
+# OPTIONAL BLUR
 # =========================
 img_blur = img.filter(ImageFilter.GaussianBlur(radius=BLUR_RADIUS))
 img_blur_np = np.array(img_blur)
@@ -78,7 +78,7 @@ print("LAB shape:", pixels_lab.shape)
 print("HSV shape:", pixels_hsv.shape)
 
 # =========================
-# K-MEANS CLUSTERING (LAB)
+# K-MEANS CLUSTERING
 # =========================
 kmeans = KMeans(n_clusters=K, random_state=42, n_init=10)
 kmeans.fit(pixels_lab)
@@ -86,14 +86,10 @@ kmeans.fit(pixels_lab)
 labels = kmeans.labels_
 centers_lab = kmeans.cluster_centers_
 
-print("\nCluster centers (LAB):")
-print(centers_lab)
-
 # =========================
-# CONVERT LAB → RGB
+# LAB → RGB
 # =========================
-centers_lab_reshaped = centers_lab.reshape(1, K, 3)
-centers_rgb = lab2rgb(centers_lab_reshaped).reshape(K, 3)
+centers_rgb = lab2rgb(centers_lab.reshape(1, K, 3)).reshape(K, 3)
 
 # =========================
 # SORT BY DOMINANCE
@@ -106,15 +102,76 @@ centers_lab = centers_lab[sorted_idx]
 counts = counts[sorted_idx]
 
 # =========================
-# PRINT DOMINANT COLORS
+# CLUSTER SATURATION (HSV)
 # =========================
-print("\nDominant Colors (RGB 0-255):")
-for i, color in enumerate(centers_rgb):
-    rgb_255 = (color * 255).astype(int)
-    print(f"{i+1}: {rgb_255} | count = {counts[i]}")
+cluster_saturation = []
+
+for i in range(K):
+    cluster_pixels = pixels_hsv[labels == i]
+
+    if len(cluster_pixels) == 0:
+        cluster_saturation.append(0)
+    else:
+        cluster_saturation.append(np.mean(cluster_pixels[:, 1]))
+
+cluster_saturation = np.array(cluster_saturation)
+cluster_saturation = cluster_saturation[sorted_idx]
 
 # =========================
-# SHOW COLOR PALETTE
+# LIGHTNESS (LAB)
+# =========================
+lightness = centers_lab[:, 0]
+
+# =========================
+# COLOR SCORING
+# =========================
+scores = []
+
+for i in range(K):
+    pop = counts[i]
+    sat = cluster_saturation[i]
+    L = lightness[i]
+
+    pop_norm = pop / np.sum(counts)
+
+    # Penalize unusable tones
+    if L < 20 or L > 85:
+        light_penalty = 0.5
+    else:
+        light_penalty = 1.0
+
+    score = (0.5 * pop_norm + 0.8 * sat) * light_penalty
+    scores.append(score)
+
+scores = np.array(scores)
+
+# =========================
+# PICK ACCENT COLOR
+# =========================
+best_idx = np.argmax(scores)
+accent_color = centers_rgb[best_idx]
+accent_rgb = (accent_color * 255).astype(int)
+
+# =========================
+# PRINT DEBUG INFO
+# =========================
+print("\nDetailed Cluster Info:")
+
+for i in range(K):
+    rgb_255 = (centers_rgb[i] * 255).astype(int)
+    print(f"""
+Cluster {i+1}
+RGB: {rgb_255}
+Count: {counts[i]}
+Saturation: {cluster_saturation[i]:.3f}
+Lightness: {lightness[i]:.2f}
+Score: {scores[i]:.3f}
+""")
+
+print("\nAccent Color:", accent_rgb)
+
+# =========================
+# SHOW PALETTE
 # =========================
 palette = np.zeros((50, 300, 3))
 step = 300 // K
@@ -129,17 +186,27 @@ plt.axis("off")
 plt.show()
 
 # =========================
+# SHOW ACCENT COLOR
+# =========================
+accent_patch = np.ones((100, 100, 3)) * accent_color
+
+plt.figure(figsize=(3, 3))
+plt.imshow(accent_patch)
+plt.title(f"Accent {accent_rgb}")
+plt.axis("off")
+plt.show()
+
+# =========================
 # RGB DISTRIBUTION
 # =========================
 r = pixels[:, 0]
 g = pixels[:, 1]
-b_rgb = pixels[:, 2]
 
 plt.figure(figsize=(6, 6))
 plt.scatter(r, g, c=pixels / 255.0, s=3, alpha=0.6)
 plt.xlabel("Red")
 plt.ylabel("Green")
-plt.title("Color Distribution (RGB space)")
+plt.title("RGB Distribution")
 plt.tight_layout()
 plt.show()
 
@@ -151,8 +218,8 @@ b_lab = pixels_lab[:, 2]
 
 plt.figure(figsize=(6, 6))
 plt.scatter(a_lab, b_lab, c=img_small_norm.reshape(-1, 3), s=3, alpha=0.6)
-plt.xlabel("A (Green-Red)")
-plt.ylabel("B (Blue-Yellow)")
-plt.title("LAB Color Distribution (A-B space)")
+plt.xlabel("A")
+plt.ylabel("B")
+plt.title("LAB Distribution")
 plt.tight_layout()
 plt.show()
