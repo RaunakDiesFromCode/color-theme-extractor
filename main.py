@@ -1,6 +1,7 @@
 from PIL import Image, ImageFilter
 import numpy as np
 import matplotlib.pyplot as plt
+from skimage.color import rgb2lab, rgb2hsv
 
 # =========================
 # CONFIG
@@ -62,7 +63,25 @@ pixels = img_small_np.reshape(-1, 3)
 print("Pixel array shape:", pixels.shape)
 
 # =========================
-# COLOR DISTRIBUTION (RGB SPACE)
+# COLOR SPACE CONVERSION
+# =========================
+
+# Normalize to [0,1] for skimage
+img_small_norm = img_small_np / 255.0
+
+# Convert
+img_lab = rgb2lab(img_small_norm)
+img_hsv = rgb2hsv(img_small_norm)
+
+# Flatten
+pixels_lab = img_lab.reshape(-1, 3)
+pixels_hsv = img_hsv.reshape(-1, 3)
+
+print("LAB shape:", pixels_lab.shape)
+print("HSV shape:", pixels_hsv.shape)
+
+# =========================
+# RGB COLOR DISTRIBUTION
 # =========================
 r = pixels[:, 0]
 g = pixels[:, 1]
@@ -72,6 +91,21 @@ plt.figure(figsize=(6, 6))
 plt.scatter(r, g, c=pixels / 255.0, s=5)
 plt.xlabel("Red")
 plt.ylabel("Green")
-plt.title("Color Distribution (RG space)")
+plt.title("Color Distribution (RGB space)")
+plt.tight_layout()
+plt.show()
+
+# =========================
+# LAB COLOR DISTRIBUTION
+# =========================
+
+a = pixels_lab[:, 1]
+b = pixels_lab[:, 2]
+
+plt.figure(figsize=(6, 6))
+plt.scatter(a, b, c=img_small_norm.reshape(-1, 3), s=5)
+plt.xlabel("A (Green-Red)")
+plt.ylabel("B (Blue-Yellow)")
+plt.title("LAB Color Distribution (A-B space)")
 plt.tight_layout()
 plt.show()
