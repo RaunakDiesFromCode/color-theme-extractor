@@ -1,300 +1,261 @@
-import streamlit as st
-import numpy as np
-from PIL import Image
-from sklearn.cluster import KMeans
-from skimage.color import rgb2lab, rgb2hsv, lab2rgb, hsv2rgb
-import plotly.express as px
 import json
+
+import numpy as np
+import plotly.express as px
+import streamlit as st
 import streamlit.components.v1 as components
 
+from theme_extractor import ThemeExtractor
 
-def copy_button(label, data):
-    json_data = json.dumps(data)
 
-    components.html(f"""
-        <button onclick='navigator.clipboard.writeText(`{json_data}`)'
+def render_copy_button(label, text_payload):
+    js_payload = json.dumps(text_payload)
+    components.html(
+        f"""
+        <button onclick='navigator.clipboard.writeText({js_payload})'
         style="
-            background:#2563eb;
+            background:#1f7a5c;
             color:white;
-            padding:8px 12px;
+            padding:10px 14px;
             border:none;
             border-radius:8px;
             cursor:pointer;
-            margin-top:8px;
+            font-weight:600;
+            width:100%;
         ">
-        📋 {label}
+        {label}
         </button>
-    """, height=50)
+    """,
+        height=52,
+    )
 
 
-# =========================
-# PAGE CONFIG + STYLES
-# =========================
-st.set_page_config(layout="wide", page_title="Theme Engine")
+def make_palette_strip(palette_rgb, width=720, height=70):
+    palette = np.zeros((height, width, 3), dtype=float)
+    if not palette_rgb:
+        return palette
 
-st.markdown("""
+    step = max(1, width // len(palette_rgb))
+    for i, rgb in enumerate(palette_rgb):
+        start = i * step
+        end = width if i == len(palette_rgb) - 1 else (i + 1) * step
+        palette[:, start:end, :] = np.array(rgb) / 255.0
+    return palette
+
+
+st.set_page_config(layout="wide", page_title="Theme Palette Engine")
+
+st.markdown(
+    """
 <style>
-.block-container {padding-top: 1.5rem;}
-.section {
+.block-container {padding-top: 1.2rem; padding-bottom: 1.2rem;}
+.card {
     padding: 18px;
-    border-radius: 16px;
-    background: #0f1117;
+    border-radius: 14px;
+    background: #101521;
     border: 1px solid rgba(255,255,255,0.08);
     margin-bottom: 16px;
 }
-.title {
+.card-title {
     font-size: 22px;
-    font-weight: 600;
-    margin-bottom: 6px;
+    font-weight: 700;
+    margin-bottom: 8px;
 }
-.desc {
-    color: #9aa0a6;
+.card-sub {
+    color: #b5becc;
     font-size: 14px;
-    margin-bottom: 10px;
+    margin-bottom: 14px;
 }
-.badge {
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: #1f2937;
-    font-size: 12px;
-    margin-right: 6px;
+.footer {
+    margin-top: 16px;
+    text-align: center;
+    font-size: 13px;
+    color: #8b96aa;
+    padding: 12px 8px;
+    border-top: 1px solid rgba(255,255,255,0.08);
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-st.title("🎨 Image → Theme Engine")
+st.title("Image to Theme Palette")
 st.caption(
-    "Understand how colors are extracted, evaluated, and turned into a UI theme.")
+    "Upload an image to generate a weighted, usability-aware palette and UI theme."
+)
 
-# =========================
-# SIDEBAR CONTROLS
-# =========================
-st.sidebar.header("Controls")
+st.sidebar.header("Engine Controls")
+k = st.sidebar.slider(
+    "Clusters (K)",
+    min_value=3,
+    max_value=10,
+    value=6,
+    help="How many dominant color groups to extract.",
+)
+population_weight = st.sidebar.slider(
+    "Population Weight",
+    min_value=0.0,
+    max_value=1.5,
+    value=0.5,
+    help="Higher values favor colors that occupy larger image regions.",
+)
+saturation_weight = st.sidebar.slider(
+    "Saturation Weight",
+    min_value=0.0,
+    max_value=2.0,
+    value=0.8,
+    help="Higher values favor more vivid colors.",
+)
+penalty_enabled = st.sidebar.checkbox(
+    "Penalize too dark/light colors",
+    value=True,
+    help="Applies a penalty to colors with poor lightness usability.",
+)
 
-K = st.sidebar.slider("Clusters (K)", 3, 10, 6,
-                      help="Number of color groups extracted from the image")
-
-w_pop = st.sidebar.slider("Population Weight", 0.0, 1.5, 0.5,
-                          help="How much importance large areas get")
-
-w_sat = st.sidebar.slider("Saturation Weight", 0.0, 2.0, 0.8,
-                          help="Higher = more vibrant colors preferred")
-
-use_penalty = st.sidebar.checkbox("Penalize too dark/light colors", True)
-
-# =========================
-# IMAGE INPUT
-# =========================
-uploaded = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
+uploaded = st.file_uploader(
+    "Upload an image",
+    type=["png", "jpg", "jpeg"],
+)
 
 if uploaded:
-    img = Image.open(uploaded).convert("RGB")
-    img_small = img.resize((64, 64))
-    img_np = np.array(img_small)
+    extractor = ThemeExtractor(
+        k=k,
+        population_weight=population_weight,
+        saturation_weight=saturation_weight,
+        penalty_enabled=penalty_enabled,
+    )
+    result = extractor.extract(uploaded)
 
-    pixels = img_np.reshape(-1, 3)
-    img_norm = img_np / 255.0
+    original = result["images"]["original"]
+    resized = result["images"]["resized"]
+    clustered = result["images"]["clustered"]
+    palette_rgb = result["palette_rgb"]
+    accent_rgb = result["accent_rgb"]
+    cluster_details = result["cluster_details"]
+    theme = result["theme"]
 
-    # =========================
-    # SECTION 1 — INPUT
-    # =========================
-    st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown('<div class="title">1. Image Preprocessing</div>',
+    theme_json = json.dumps(theme, indent=2)
+    palette_strip = make_palette_strip(palette_rgb)
+    accent_patch = np.ones((120, 120, 3), dtype=float) * \
+        (np.array(accent_rgb) / 255.0)
+
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">Image Input and Theme Palette</div>',
                 unsafe_allow_html=True)
-    st.markdown('<div class="desc">We shrink the image to preserve color distribution while reducing computation.</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card-sub">Top priority output: image preview, extracted palette, accent choice, and theme JSON actions.</div>',
+        unsafe_allow_html=True,
+    )
 
-    col1, col2 = st.columns(2)
-    col1.image(img, caption="Original")
-    col2.image(img_small, caption="Resized (64×64)")
+    c1, c2 = st.columns(2)
+    c1.image(original, caption="Original Image", use_container_width=True)
+    c2.image(
+        resized, caption=f"Resized for Analysis ({result['config']['resize'][0]}x{result['config']['resize'][1]})", use_container_width=True)
+
+    c3, c4 = st.columns([3, 1])
+    c3.image(palette_strip, caption="Extracted Palette (Dominance Sorted)",
+             use_container_width=True)
+    c4.image(accent_patch,
+             caption=f"Accent {accent_rgb}", use_container_width=True)
+
+    st.write("Theme JSON payload:")
+    with st.popover("Preview Theme JSON"):
+        st.code(theme_json, language="json")
+
+    c5, c6 = st.columns(2)
+    with c5:
+        render_copy_button("Copy Theme JSON", theme_json)
+    with c6:
+        st.download_button(
+            "Download Theme JSON",
+            data=theme_json,
+            file_name="theme.json",
+            mime="application/json",
+            use_container_width=True,
+        )
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # =========================
-    # COLOR SPACE
-    # =========================
-    img_lab = rgb2lab(img_norm)
-    img_hsv = rgb2hsv(img_norm)
-
-    pixels_lab = img_lab.reshape(-1, 3)
-    pixels_hsv = img_hsv.reshape(-1, 3)
-
-    # =========================
-    # SECTION 2 — DISTRIBUTION
-    # =========================
-    st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown('<div class="title">2. Color Distribution</div>',
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">How It Works (Detailed)</div>',
                 unsafe_allow_html=True)
-    st.markdown("""
-    <div class="desc">
-    Colors naturally form clusters. LAB space groups visually similar colors better than RGB.
-    <br><br>
-    <span class="badge">Example</span> Sky pixels → tight cluster
-    <span class="badge">Example</span> Skin tones → grouped region
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        """
+1. **Preprocessing**: The image is resized to reduce computation while preserving color distribution.
+2. **Perceptual conversion**: RGB pixels are converted to LAB and HSV.
+   - LAB is used for clustering because Euclidean distance in LAB better matches human color similarity.
+   - HSV saturation is used as a visual strength signal.
+3. **K-Means clustering**: Pixels in LAB are grouped into $K$ dominant clusters.
+4. **Dominance sorting**: Clusters are sorted by pixel count, so the palette starts with the most dominant color.
+5. **Feature extraction per cluster**:
+   - Population $p_i = \frac{count_i}{\sum count}$
+   - Saturation $s_i = \text{mean HSV saturation of cluster } i$
+   - Lightness $L_i = \text{LAB L channel of cluster center}$
+6. **Usability-aware scoring**:
+   - Lightness penalty is applied if color is too dark/light for broad UI use.
+   - Score formula:
 
+$$
+\text{score}_i = \left(w_{pop} \cdot p_i + w_{sat} \cdot s_i\right) \cdot penalty_i
+$$
+
+   - If penalty is enabled and $L_i < 20$ or $L_i > 85$, then $penalty_i = 0.5$, else $1.0$.
+7. **Accent selection**: The highest scoring cluster center becomes the accent color.
+8. **Theme synthesis**: Accent hue anchors derived colors (`primary`, `secondary`, `background_light`, `background_dark`, `surface`) plus contrast-safe text color.
+"""
+    )
+
+    lab_ab = result["distribution"]["lab_ab"]
+    rgb_norm = result["distribution"]["rgb_norm"]
+    color_values = [
+        f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
+        for r, g, b in rgb_norm
+    ]
     fig = px.scatter(
-        x=pixels_lab[:, 1],
-        y=pixels_lab[:, 2],
-        color=[f'rgb({int(r*255)},{int(g*255)},{int(b*255)})'
-               for r, g, b in img_norm.reshape(-1, 3)],
-        title="LAB Color Clusters (A vs B)"
+        x=lab_ab[:, 0],
+        y=lab_ab[:, 1],
+        color=color_values,
+        title="LAB Distribution (A vs B)",
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    c7, c8 = st.columns(2)
+    c7.image(clustered, caption="Clustered Preview", use_container_width=True)
 
-    # =========================
-    # CLUSTERING
-    # =========================
-    kmeans = KMeans(n_clusters=K, random_state=42, n_init=10)
-    kmeans.fit(pixels_lab)
+    theme_preview = np.zeros((120, 600, 3), dtype=float)
+    swatches = [
+        np.array(theme["primary"]) / 255.0,
+        np.array(theme["secondary"]) / 255.0,
+        np.array(theme["background_light"]) / 255.0,
+        np.array(theme["background_dark"]) / 255.0,
+        np.array(theme["surface"]) / 255.0,
+    ]
+    step = 600 // len(swatches)
+    for i, swatch in enumerate(swatches):
+        start = i * step
+        end = 600 if i == len(swatches) - 1 else (i + 1) * step
+        theme_preview[:, start:end, :] = swatch
+    c8.image(theme_preview, caption="Generated Theme",
+             use_container_width=True)
 
-    labels = kmeans.labels_
-    centers_lab = kmeans.cluster_centers_
-    centers_rgb = lab2rgb(centers_lab.reshape(1, K, 3)).reshape(K, 3)
-    palette_rgb = [(centers_rgb[i] * 255).astype(int).tolist() for i in range(K)]
-
-    st.write("Palette (RGB):", palette_rgb)
-
-    copy_button("Copy Palette JSON", palette_rgb)
-
-    counts = np.bincount(labels)
-    idx = np.argsort(counts)[::-1]
-
-    centers_rgb = centers_rgb[idx]
-    centers_lab = centers_lab[idx]
-    counts = counts[idx]
-
-    # =========================
-    # SECTION 3 — CLUSTERS
-    # =========================
-    st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown('<div class="title">3. Color Clustering</div>',
-                unsafe_allow_html=True)
-    st.markdown("""
-    <div class="desc">
-    K-Means groups pixels into dominant colors.
-    Each pixel is replaced by its cluster center.
-    </div>
-    """, unsafe_allow_html=True)
-
-    clustered = centers_rgb[labels].reshape(64, 64, 3)
-    st.image(clustered, caption="Clustered Image")
-
-    # palette
-    palette = np.zeros((50, 300, 3))
-    step = 300 // K
-    for i in range(K):
-        palette[:, i*step:(i+1)*step] = centers_rgb[i]
-
-    st.image(palette, caption="Extracted Palette")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # =========================
-    # SAT + LIGHT
-    # =========================
-    cluster_saturation = []
-    for i in range(K):
-        cp = pixels_hsv[labels == i]
-        cluster_saturation.append(np.mean(cp[:, 1]) if len(cp) else 0)
-
-    cluster_saturation = np.array(cluster_saturation)[idx]
-    lightness = centers_lab[:, 0]
-
-    # =========================
-    # SECTION 4 — SCORING
-    # =========================
-    st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown('<div class="title">4. Color Scoring</div>',
-                unsafe_allow_html=True)
-    st.markdown("""
-    <div class="desc">
-    Each color is evaluated based on:
-    <ul>
-    <li>Population (importance)</li>
-    <li>Saturation (visual strength)</li>
-    <li>Lightness (usability)</li>
-    </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
-    scores = []
-    for i in range(K):
-        pop = counts[i]/np.sum(counts)
-        sat = cluster_saturation[i]
-        L = lightness[i]
-
-        penalty = 0.5 if (use_penalty and (L < 20 or L > 85)) else 1.0
-        score = (w_pop*pop + w_sat*sat) * penalty
-        scores.append(score)
-
-    scores = np.array(scores)
-    best_idx = np.argmax(scores)
-
-    # table
     table = []
-    for i in range(K):
-        rgb = (centers_rgb[i]*255).astype(int)
-        table.append({
-            "Color": str(rgb),
-            "Count": int(counts[i]),
-            "Sat": round(cluster_saturation[i], 3),
-            "Light": round(lightness[i], 2),
-            "Score": round(scores[i], 3)
-        })
-
-    st.dataframe(table)
-
+    for cluster in cluster_details:
+        table.append(
+            {
+                "Rank": cluster["rank"],
+                "RGB": str(cluster["rgb"]),
+                "Count": cluster["count"],
+                "Population": round(cluster["population"], 4),
+                "Saturation": round(cluster["saturation"], 4),
+                "Lightness": round(cluster["lightness"], 2),
+                "Score": round(cluster["score"], 4),
+            }
+        )
+    st.dataframe(table, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # =========================
-    # ACCENT
-    # =========================
-    accent = centers_rgb[best_idx]
-    accent_rgb = (accent*255).astype(int)
+else:
+    st.info("Upload an image to begin extraction.")
 
-    st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown('<div class="title">5. Accent Selection</div>',
-                unsafe_allow_html=True)
-    st.markdown('<div class="desc">The highest scoring color becomes the theme anchor.</div>',
-                unsafe_allow_html=True)
-
-    st.write("Accent Color:", accent_rgb)
-    st.image(np.ones((100, 100, 3))*accent)
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # =========================
-    # THEME
-    # =========================
-    accent_hsv = rgb2hsv(accent.reshape(1, 1, 3)).reshape(3)
-    h, s, v = accent_hsv
-
-    primary = accent
-    secondary = hsv2rgb([h, max(0.3, s*0.6), v])
-    bg_light = hsv2rgb([h, 0.1, 0.95])
-    bg_dark = hsv2rgb([h, 0.2, 0.15])
-    surface = hsv2rgb([h, 0.15, 0.9])
-
-    st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown('<div class="title">6. Theme Generation</div>',
-                unsafe_allow_html=True)
-    st.markdown("""
-    <div class="desc">
-    The accent hue is reused while saturation and brightness are adjusted
-    to create UI-safe colors.
-    </div>
-    """, unsafe_allow_html=True)
-
-    theme = np.zeros((120, 600, 3))
-    colors = [primary, secondary, bg_light, bg_dark, surface]
-    step = 600//len(colors)
-
-    for i, c in enumerate(colors):
-        theme[:, i*step:(i+1)*step] = c
-
-    st.image(theme)
-
-    st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">Made by Raunak | GitHub: RaunakDiesFromCode</div>',
+            unsafe_allow_html=True)
