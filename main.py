@@ -1,14 +1,16 @@
 from PIL import Image, ImageFilter
 import numpy as np
 import matplotlib.pyplot as plt
-from skimage.color import rgb2lab, rgb2hsv
+from skimage.color import rgb2lab, rgb2hsv, lab2rgb
+from sklearn.cluster import KMeans
 
 # =========================
 # CONFIG
 # =========================
 IMAGE_PATH = "data/test.png"
 RESIZE_DIM = (64, 64)
-BLUR_RADIUS = 10  # set 0 if you want to disable blur
+BLUR_RADIUS = 10
+K = 6  # number of clusters
 
 # =========================
 # LOAD IMAGE
@@ -22,7 +24,7 @@ img_small = img.resize(RESIZE_DIM)
 img_small_np = np.array(img_small)
 
 # =========================
-# OPTIONAL BLUR (FOR COMPARISON ONLY)
+# OPTIONAL BLUR (COMPARISON)
 # =========================
 img_blur = img.filter(ImageFilter.GaussianBlur(radius=BLUR_RADIUS))
 img_blur_np = np.array(img_blur)
@@ -56,24 +58,19 @@ plt.tight_layout()
 plt.show()
 
 # =========================
-# FLATTEN PIXELS (FOR ML)
+# FLATTEN PIXELS
 # =========================
 pixels = img_small_np.reshape(-1, 3)
-
 print("Pixel array shape:", pixels.shape)
 
 # =========================
 # COLOR SPACE CONVERSION
 # =========================
-
-# Normalize to [0,1] for skimage
 img_small_norm = img_small_np / 255.0
 
-# Convert
 img_lab = rgb2lab(img_small_norm)
 img_hsv = rgb2hsv(img_small_norm)
 
-# Flatten
 pixels_lab = img_lab.reshape(-1, 3)
 pixels_hsv = img_hsv.reshape(-1, 3)
 
@@ -81,7 +78,58 @@ print("LAB shape:", pixels_lab.shape)
 print("HSV shape:", pixels_hsv.shape)
 
 # =========================
-# RGB COLOR DISTRIBUTION
+# K-MEANS CLUSTERING (LAB)
+# =========================
+kmeans = KMeans(n_clusters=K, random_state=42, n_init=10)
+kmeans.fit(pixels_lab)
+
+labels = kmeans.labels_
+centers_lab = kmeans.cluster_centers_
+
+print("\nCluster centers (LAB):")
+print(centers_lab)
+
+# =========================
+# CONVERT LAB → RGB
+# =========================
+centers_lab_reshaped = centers_lab.reshape(1, K, 3)
+centers_rgb = lab2rgb(centers_lab_reshaped).reshape(K, 3)
+
+# =========================
+# SORT BY DOMINANCE
+# =========================
+counts = np.bincount(labels)
+sorted_idx = np.argsort(counts)[::-1]
+
+centers_rgb = centers_rgb[sorted_idx]
+centers_lab = centers_lab[sorted_idx]
+counts = counts[sorted_idx]
+
+# =========================
+# PRINT DOMINANT COLORS
+# =========================
+print("\nDominant Colors (RGB 0-255):")
+for i, color in enumerate(centers_rgb):
+    rgb_255 = (color * 255).astype(int)
+    print(f"{i+1}: {rgb_255} | count = {counts[i]}")
+
+# =========================
+# SHOW COLOR PALETTE
+# =========================
+palette = np.zeros((50, 300, 3))
+step = 300 // K
+
+for i in range(K):
+    palette[:, i*step:(i+1)*step, :] = centers_rgb[i]
+
+plt.figure(figsize=(6, 2))
+plt.imshow(palette)
+plt.title("Extracted Color Palette")
+plt.axis("off")
+plt.show()
+
+# =========================
+# RGB DISTRIBUTION
 # =========================
 r = pixels[:, 0]
 g = pixels[:, 1]
@@ -96,9 +144,8 @@ plt.tight_layout()
 plt.show()
 
 # =========================
-# LAB COLOR DISTRIBUTION
+# LAB DISTRIBUTION
 # =========================
-
 a_lab = pixels_lab[:, 1]
 b_lab = pixels_lab[:, 2]
 
