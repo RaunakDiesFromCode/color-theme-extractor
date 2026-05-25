@@ -171,8 +171,7 @@ In the Streamlit sidebar:
 ## Notes
 
 - The frontend is intentionally presentation-only; algorithm logic lives in `theme_extractor.py`.
-- The UI footer credits: `Made by Raunak | GitHub: RaunakDiesFromCode`.
 
 ## License
 
-Add a license file if you plan to publish/distribute this repository.
+Licensed under the MIT License. See `LICENSE`.
